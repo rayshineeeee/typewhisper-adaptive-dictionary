@@ -25,7 +25,7 @@ info_principal_class="$(plutil -extract NSPrincipalClass raw "$info_plist")"
 [[ "$principal_class" == "AdaptiveDictionaryPlugin" ]]
 [[ "$info_principal_class" == "AdaptiveDictionaryPlugin" ]]
 [[ "$(plutil -extract name raw "$manifest")" == "Adaptive Dictation" ]]
-[[ "$(plutil -extract version raw "$manifest")" == "1.1.0" ]]
+[[ "$(plutil -extract version raw "$manifest")" == "1.1.1" ]]
 file "$executable" | grep -q "Mach-O 64-bit bundle arm64"
 file "$harness" | grep -q "Mach-O 64-bit executable arm64"
 otool -L "$executable" | grep -q "@rpath/TypeWhisperPluginSDK.framework"

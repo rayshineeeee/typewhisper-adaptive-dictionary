@@ -36,7 +36,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.raysun.typewhisper.adaptive-dictionary
         PRODUCT_NAME: AdaptiveDictionaryPlugin
         PRODUCT_MODULE_NAME: AdaptiveDictionaryPlugin
-        MARKETING_VERSION: 1.1.0
+        MARKETING_VERSION: 1.1.1
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_CFBundleDisplayName: Adaptive Dictation

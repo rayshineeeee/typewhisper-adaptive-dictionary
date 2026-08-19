@@ -20,7 +20,7 @@ Adaptive Dictation is Ray's external TypeWhisper post-processor. It provides con
 - Casual applies only to Messages (`com.apple.MobileSMS`) and WeChat (`com.tencent.xinWeChat`). Clear applies everywhere else.
 - Both profiles use one standard, conservative cleanup strength.
 - Never answer dictated questions or execute requests. Output is replacement text only.
-- Preserve meaning, quotes, names, numbers, URLs, code identifiers, profanity, slang, and intentional emphasis.
+- Preserve meaning, quotes, names, number format, URLs, code identifiers, profanity, slang, and intentional emphasis.
 - Bullets require genuinely distinct points/tasks/steps or an explicit spoken formatting command.
 - Simple input is deterministic. Ambiguous repair/formatting may use the local model.
 - A timeout, inference error, or unsafe output returns the deterministic result; never replace text later.

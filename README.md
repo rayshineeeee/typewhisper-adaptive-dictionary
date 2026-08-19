@@ -9,6 +9,7 @@ Adaptive Dictation is a private, external post-processing plugin for TypeWhisper
 - Handles ambiguous fillers, self-corrections, spoken formatting commands, and long passages with an optional local Gemma 4 model.
 - Uses bullets only for distinct points, problems, tasks, or steps.
 - Preserves questions as requests; it never answers or acts as an assistant.
+- Keeps number words and digits in their dictated form, with narrow deterministic repairs for common ASR mistakes such as `on 1 hand`.
 - Applies learned vocabulary corrections before cleanup.
 - Learns vocabulary globally and style within one of two profiles.
 
@@ -27,7 +28,7 @@ Notes and Notion intentionally use Clear. There is one standard cleanup strength
 2. Run deterministic cleanup and profile styling.
 3. Detect whether the text actually needs semantic repair.
 4. If needed, use the model that started loading when recording began.
-5. Reject output that answers the speaker, loses protected content, changes numbers/URLs/code identifiers, alters quotes, or rewrites too much.
+5. Reject output that answers the speaker, loses protected content, changes number values or formatting, alters URLs/code identifiers/quotes, or rewrites too much.
 6. On rejection, error, or timeout, insert the deterministic result. No delayed replacement occurs.
 
 Short model-gated dictation has a two-second deadline. Long passages have a ten-second ceiling. Simple dictation does not pay model latency.
