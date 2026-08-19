@@ -2,7 +2,7 @@
 
 ## Overview
 
-Adaptive Dictation is Ray's external TypeWhisper post-processor. It provides conservative cleanup, Casual/Clear app routing, a gated local Gemma 4 rewrite path, and local learning from edits. It is not a TypeWhisper fork.
+Adaptive Dictation is an independent TypeWhisper post-processor. It provides conservative cleanup, Casual/Clear app routing, an optional local Gemma 4 rewrite path, and local learning from committed edits. It is not a TypeWhisper fork or a transcription engine.
 
 ## Structure
 
@@ -10,10 +10,10 @@ Adaptive Dictation is Ray's external TypeWhisper post-processor. It provides con
 - `Sources/AdaptiveDictionaryPlugin/`: TypeWhisper adapter, Accessibility context/capture, MLX runtime, notification, and SwiftUI settings.
 - `Tests/AdaptiveDictionaryCoreTests/`: Fast behavior, safety, migration, and persistence tests.
 - `Resources/manifest.json`: TypeWhisper plugin metadata.
-- `Tools/RuntimeHarness/`: Native text target for end-to-end edit-learning verification.
-- `Tools/PluginHarness/`: Loads the release bundle directly for real local-model inference checks.
+- `Tools/RuntimeHarness/`: Native text target for edit-learning verification.
+- `Tools/PluginHarness/`: Loads the release bundle for real local-model inference checks.
 - `project.yml`: XcodeGen bundle and pinned MLX dependencies.
-- `scripts/`: Build, install, and verification entry points.
+- `scripts/`: Build, install, packaging, and verification entry points.
 
 ## Product invariants
 
@@ -21,16 +21,16 @@ Adaptive Dictation is Ray's external TypeWhisper post-processor. It provides con
 - Both profiles use one standard, conservative cleanup strength.
 - Never answer dictated questions or execute requests. Output is replacement text only.
 - Preserve meaning, quotes, names, number format, URLs, code identifiers, profanity, slang, and intentional emphasis.
-- Bullets require genuinely distinct points/tasks/steps or an explicit spoken formatting command.
-- Simple input is deterministic. Ambiguous repair/formatting may use the local model.
-- A timeout, inference error, or unsafe output returns the deterministic result; never replace text later.
+- Bullets require genuinely distinct points, tasks, or steps, or an explicit spoken formatting command.
+- Simple input is deterministic. Ambiguous repair and formatting may use the local model.
+- A timeout, inference error, or unsafe output returns the deterministic result. Never replace text later.
 - Vocabulary rules are global. Style examples are shared only within Casual or Clear, never per app.
 - Numeric edits never become automatic learned rules.
 
 ## Privacy and model lifecycle
 
 - Raw transcript, plugin output, final edited text, profile, and timestamp are stored in plugin-scoped local JSON.
-- Never store surrounding Accessibility context; use it only for the current local inference.
+- Never store surrounding Accessibility context; use it only for current local inference.
 - Never add telemetry, uploads, remote inference, or cloud fallbacks.
 - Network access is allowed only for an explicit model download from the selected Hugging Face repository.
 - E4B 4-bit is the default; E2B 4-bit is the smaller alternative.
@@ -48,12 +48,21 @@ Adaptive Dictation is Ray's external TypeWhisper post-processor. It provides con
 - Keep UI native and restrained; the governing idea is one private cleanup pipeline.
 - Preserve GPL-3.0 compatibility and update `THIRD_PARTY_NOTICES.md` when adapting upstream code.
 
+## Public release invariants
+
+- Never publish model weights in the repository or plugin bundle.
+- Bundle the project license, third-party notices, and dependency license texts in every release.
+- Tag the exact source used for each binary release and attach a SHA-256 checksum.
+- Keep the GitHub Release install path working until TypeWhisper publishes a signed Community marketplace build.
+- Do not imply that the project is affiliated with or endorsed by TypeWhisper.
+
 ## Commands
 
 - `swift test`
 - `scripts/build.sh`
 - `scripts/verify.sh`
 - `scripts/install.sh`
+- `scripts/package-release.sh`
 - `scripts/run-plugin-harness.sh process "<text>" [bundle-id]`
 
 The MLX build requires Xcode's Metal toolchain. Install it with `xcodebuild -downloadComponent MetalToolchain` if Xcode reports it missing.
@@ -61,6 +70,6 @@ The MLX build requires Xcode's Metal toolchain. Install it with `xcodebuild -dow
 ## Working agreements
 
 - Read this file and `README.md` before editing.
-- Update this file when architecture, privacy boundaries, commands, or product invariants change.
+- Update both files when architecture, privacy boundaries, commands, or product invariants change.
 - Keep this file at 120 lines or fewer.
-- Verify the built bundle, installed runtime, deterministic fallback, local model path, and learning/undo path before release.
+- Verify the built bundle, packaged ZIP, deterministic fallback, local-model path, and learning/undo path before release.

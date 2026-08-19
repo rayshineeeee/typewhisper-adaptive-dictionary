@@ -7,7 +7,7 @@
   "minOSVersion": "14.0",
   "supportedArchitectures": ["arm64"],
   "author": "Ray Sun",
-  "description": "Private local cleanup with two writing styles, adaptive vocabulary, and optional Gemma 4 semantic rewriting.",
+  "description": "Local dictation cleanup with two writing styles, adaptive vocabulary, and optional Gemma 4 semantic rewriting.",
   "principalClass": "AdaptiveDictionaryPlugin",
   "requiresAPIKey": false,
   "hosting": "local",

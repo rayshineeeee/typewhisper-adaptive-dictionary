@@ -10,10 +10,15 @@ harness="$($project_root/scripts/build-plugin-harness.sh | tail -n 1)"
 executable="$bundle/Contents/MacOS/AdaptiveDictionaryPlugin"
 manifest="$bundle/Contents/Resources/manifest.json"
 info_plist="$bundle/Contents/Info.plist"
+resources="$bundle/Contents/Resources"
 
 test -x "$executable"
 test -x "$harness"
 test -f "$manifest"
+test -f "$resources/Adaptive-Dictation-GPL-3.0.txt"
+test -f "$resources/THIRD_PARTY_NOTICES.md"
+test -f "$resources/MLXSwiftLM-MIT.txt"
+test -f "$resources/SwiftTransformers-Apache-2.0.txt"
 plutil -convert xml1 -o /dev/null "$manifest"
 plutil -lint "$info_plist"
 
@@ -54,10 +59,15 @@ rg -q "defaultIdleUnloadSeconds = 600" Sources/AdaptiveDictionaryPlugin/LocalGem
 rg -q "recordingInProgress" Sources/AdaptiveDictionaryPlugin/LocalGemmaRuntime.swift
 rg -q "RecordingStartedPayload" Tools/PluginHarness/main.swift
 rg -q "revision: 09deb8c4e9056fcd76b60718bb50325d1730572b" project.yml
+rg -q "revision: 2fa33e1f5e7131a7fc64c28e6d161dcec0d24820" project.yml
+rg -q "Copyright \(C\) 2026 Ray Sun" "$resources/Adaptive-Dictation-GPL-3.0.txt"
+rg -q "TypeWhisper Gemma 4 plugin" "$resources/THIRD_PARTY_NOTICES.md"
+rg -q "Copyright \(c\) 2024 ml-explore" "$resources/MLXSwiftLM-MIT.txt"
+rg -q "Apache License" "$resources/SwiftTransformers-Apache-2.0.txt"
 
 if find "$bundle" -name '*.safetensors' -print -quit | grep -q .; then
     echo "Model weights must not be embedded in the plugin bundle." >&2
     exit 1
 fi
 
-echo "Verified core tests, metadata, MLX resources, arm64 linkage, signature, explicit-download boundary, and no bundled weights."
+echo "Verified tests, metadata, dependency licenses, arm64 linkage, signature, explicit-download boundary, and no bundled weights."

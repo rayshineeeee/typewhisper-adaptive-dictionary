@@ -10,7 +10,11 @@ import Tokenizers
 import TypeWhisperPluginSDK
 
 // Model loading and tokenization are adapted from TypeWhisper's GPL-3.0 Gemma4Plugin v1.5.1.
-// The rewrite policy, lifecycle, storage, and UI in this plugin are independent.
+// Copyright (C) 2026 TypeWhisper contributors.
+// Modified for Adaptive Dictation's post-processing policy, plugin-owned storage,
+// recording-triggered loading, idle unloading, and settings on 2026-08-18.
+// Adaptive Dictation modifications Copyright (C) 2026 Ray Sun.
+// SPDX-License-Identifier: GPL-3.0-only
 
 private struct AdaptiveGemmaDownloader: Downloader {
     let client: HubClient

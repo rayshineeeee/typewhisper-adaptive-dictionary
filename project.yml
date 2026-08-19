@@ -12,7 +12,7 @@ packages:
     revision: 09deb8c4e9056fcd76b60718bb50325d1730572b
   SwiftTransformers:
     url: https://github.com/huggingface/swift-transformers.git
-    from: 1.1.6
+    revision: 2fa33e1f5e7131a7fc64c28e6d161dcec0d24820
 targets:
   AdaptiveDictionaryPlugin:
     type: bundle
