@@ -133,6 +133,7 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
     @MainActor
     func process(text: String, context: PostProcessingContext) async throws -> String {
         guard let state = stateSnapshot() else { return text }
+        defer { state.localModel.finishDictationActivity() }
         let dictationContext = AccessibilityContextReader.context(from: context)
         let profile = DictationProfile.resolve(bundleIdentifier: context.bundleIdentifier)
         var correctedText = text
@@ -150,8 +151,7 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
             }
         }
         let provider: (any SemanticRewriteProvider)? =
-            state.localModel.semanticCleanupEnabled
-                && state.localModel.isReady
+            state.localModel.canAttemptRewrite
             ? state.localModel
             : nil
         let result = await DictationPipeline.process(
@@ -180,6 +180,16 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
         guard let state = stateSnapshot() else { return }
 
         switch event {
+        case .recordingStarted:
+            await MainActor.run {
+                state.localModel.prepareForRecording()
+            }
+
+        case .recordingStopped:
+            await MainActor.run {
+                state.localModel.recordingDidStop()
+            }
+
         case .textInserted(let payload):
             let learningEnabled = state.host.userDefault(forKey: "learningEnabled") as? Bool ?? true
             guard learningEnabled else { return }

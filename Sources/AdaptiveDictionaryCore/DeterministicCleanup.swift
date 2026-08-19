@@ -63,7 +63,11 @@ public enum DeterministicCleanup {
 
         let reasons = semanticReasons(in: text)
         var cleaned = transformOutsideQuotes(text) { segment in
-            normalizeSegment(removeDuplicateWords(from: removeFillers(from: segment)))
+            normalizeSegment(
+                normalizeCommonDictationIdioms(
+                    removeDuplicateWords(from: removeFillers(from: segment))
+                )
+            )
         }
         cleaned = applySurfaceStyle(cleaned, profile: profile, context: context)
 
@@ -123,6 +127,22 @@ public enum DeterministicCleanup {
             )
         }
         return result
+    }
+
+    private static func normalizeCommonDictationIdioms(_ text: String) -> String {
+        let replacements: [(String, String)] = [
+            (#"\bOn the 1 hand\b"#, "On the one hand"),
+            (#"\bon the 1 hand\b"#, "on the one hand"),
+            (#"\bOn 1 hand\b"#, "On one hand"),
+            (#"\bon 1 hand\b"#, "on one hand"),
+        ]
+        return replacements.reduce(text) { result, replacement in
+            result.replacingOccurrences(
+                of: replacement.0,
+                with: replacement.1,
+                options: .regularExpression
+            )
+        }
     }
 
     private static func applySurfaceStyle(

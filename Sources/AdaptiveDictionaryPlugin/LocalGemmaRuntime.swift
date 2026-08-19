@@ -10,7 +10,11 @@ import Tokenizers
 import TypeWhisperPluginSDK
 
 // Model loading and tokenization are adapted from TypeWhisper's GPL-3.0 Gemma4Plugin v1.5.1.
-// The rewrite policy, lifecycle, storage, and UI in this plugin are independent.
+// Copyright (C) 2026 TypeWhisper contributors.
+// Modified for Adaptive Dictation's post-processing policy, plugin-owned storage,
+// recording-triggered loading, idle unloading, and settings on 2026-08-18.
+// Adaptive Dictation modifications Copyright (C) 2026 Ray Sun.
+// SPDX-License-Identifier: GPL-3.0-only
 
 private struct AdaptiveGemmaDownloader: Downloader {
     let client: HubClient
@@ -139,12 +143,14 @@ enum LocalGemmaError: LocalizedError {
 }
 
 final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unchecked Sendable {
+    static let defaultIdleUnloadSeconds = 600
     static let selectedModelKey = "selectedSemanticModel"
     static let semanticEnabledKey = "semanticCleanupEnabled"
     static let keepLoadedKey = "keepSemanticModelLoaded"
     static let setupRequestedKey = "semanticModelSetupRequested"
     static let runtimeStateKey = "semanticModelRuntimeState"
     static let downloadProgressKey = "semanticModelDownloadProgress"
+    static let idleUnloadSecondsKey = "semanticModelIdleUnloadSeconds"
 
     @Published private(set) var state: LocalGemmaState {
         didSet { persistState() }
@@ -155,6 +161,8 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
     private let host: HostServices
     private var modelContainer: ModelContainer?
     private var loadTask: Task<Void, Never>?
+    private var idleUnloadTask: Task<Void, Never>?
+    private var recordingInProgress = false
     private var memoryPressureSource: DispatchSourceMemoryPressure?
 
     init(host: HostServices) {
@@ -169,11 +177,12 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
             host.setUserDefault(true, forKey: Self.semanticEnabledKey)
         }
         if host.userDefault(forKey: Self.keepLoadedKey) == nil {
-            host.setUserDefault(true, forKey: Self.keepLoadedKey)
+            host.setUserDefault(false, forKey: Self.keepLoadedKey)
         }
     }
 
     deinit {
+        idleUnloadTask?.cancel()
         memoryPressureSource?.cancel()
     }
 
@@ -182,7 +191,10 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
         host.userDefault(forKey: Self.semanticEnabledKey) as? Bool ?? true
     }
     @MainActor var keepLoaded: Bool {
-        host.userDefault(forKey: Self.keepLoadedKey) as? Bool ?? true
+        host.userDefault(forKey: Self.keepLoadedKey) as? Bool ?? false
+    }
+    @MainActor var canAttemptRewrite: Bool {
+        semanticCleanupEnabled && (isReady || state == .loading)
     }
 
     @MainActor func start() {
@@ -197,13 +209,42 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
 
     @MainActor func setSemanticCleanupEnabled(_ enabled: Bool) {
         host.setUserDefault(enabled, forKey: Self.semanticEnabledKey)
+        if enabled, keepLoaded, isDownloaded(selectedModel) {
+            loadSelectedModel()
+        } else if !enabled {
+            unload(clearPersistence: false)
+        }
     }
 
     @MainActor func setKeepLoaded(_ enabled: Bool) {
         host.setUserDefault(enabled, forKey: Self.keepLoadedKey)
-        if enabled, !isReady, isDownloaded(selectedModel) {
+        if enabled {
+            cancelIdleUnload()
+            if !isReady, isDownloaded(selectedModel) {
+                loadSelectedModel()
+            }
+        } else {
+            scheduleIdleUnloadIfNeeded()
+        }
+    }
+
+    @MainActor func prepareForRecording() {
+        recordingInProgress = true
+        guard semanticCleanupEnabled, isDownloaded(selectedModel) else { return }
+        cancelIdleUnload()
+        if !isReady, !state.isBusy {
             loadSelectedModel()
         }
+    }
+
+    @MainActor func recordingDidStop() {
+        recordingInProgress = false
+        scheduleIdleUnloadIfNeeded()
+    }
+
+    @MainActor func finishDictationActivity() {
+        recordingInProgress = false
+        scheduleIdleUnloadIfNeeded()
     }
 
     @MainActor func selectModel(_ model: LocalGemmaModel) {
@@ -221,6 +262,7 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
 
     @MainActor func loadSelectedModel() {
         guard !state.isBusy, !isReady else { return }
+        cancelIdleUnload()
         let model = selectedModel
         state = isDownloaded(model) ? .loading : .downloading(0)
         loadTask?.cancel()
@@ -236,16 +278,19 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
                 self.state = .error(Self.userFacingMessage(for: error))
             }
             self.loadTask = nil
+            self.scheduleIdleUnloadIfNeeded()
         }
     }
 
     @MainActor func cancelLoad() {
+        cancelIdleUnload()
         loadTask?.cancel()
         loadTask = nil
         state = isDownloaded(selectedModel) ? .downloaded : .notDownloaded
     }
 
     @MainActor func unload(clearPersistence: Bool = false) {
+        cancelIdleUnload()
         loadTask?.cancel()
         loadTask = nil
         modelContainer = nil
@@ -269,7 +314,8 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
     }
 
     @MainActor func rewrite(_ request: SemanticRewriteRequest) async throws -> String {
-        guard let modelContainer else { throw LocalGemmaError.modelNotLoaded }
+        defer { scheduleIdleUnloadIfNeeded() }
+        let modelContainer = try await waitForModelContainer()
         let start = Date()
         let sourceWordCount = request.deterministicText.split(whereSeparator: { $0.isWhitespace }).count
         let maximumTokens = min(256, max(48, sourceWordCount * 2 + 24))
@@ -303,6 +349,15 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
         }
         lastInferenceDuration = Date().timeIntervalSince(start)
         return output
+    }
+
+    @MainActor private func waitForModelContainer() async throws -> ModelContainer {
+        while true {
+            try Task.checkCancellation()
+            if let modelContainer { return modelContainer }
+            guard state == .loading else { throw LocalGemmaError.modelNotLoaded }
+            try await Task.sleep(for: .milliseconds(25))
+        }
     }
 
     func isDownloaded(_ model: LocalGemmaModel) -> Bool {
@@ -370,6 +425,33 @@ final class LocalGemmaRuntime: ObservableObject, SemanticRewriteProvider, @unche
         guard selectedModel == model else { return }
         modelContainer = container
         state = .ready
+    }
+
+    @MainActor private func scheduleIdleUnloadIfNeeded() {
+        cancelIdleUnload()
+        guard !keepLoaded, !recordingInProgress, modelContainer != nil || state == .loading else {
+            return
+        }
+        let idleSeconds = configuredIdleUnloadSeconds
+        idleUnloadTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(idleSeconds))
+            } catch {
+                return
+            }
+            guard let self, !self.keepLoaded else { return }
+            self.unload(clearPersistence: false)
+        }
+    }
+
+    @MainActor private func cancelIdleUnload() {
+        idleUnloadTask?.cancel()
+        idleUnloadTask = nil
+    }
+
+    private var configuredIdleUnloadSeconds: Int {
+        let stored = host.userDefault(forKey: Self.idleUnloadSecondsKey) as? Int
+        return min(max(stored ?? Self.defaultIdleUnloadSeconds, 1), 3_600)
     }
 
     private func warmUp(_ container: ModelContainer, model: LocalGemmaModel) async throws {

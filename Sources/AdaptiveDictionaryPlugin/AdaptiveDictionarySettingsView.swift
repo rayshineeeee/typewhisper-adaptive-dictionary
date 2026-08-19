@@ -136,16 +136,20 @@ struct AdaptiveDictionarySettingsView: View {
                     modelControls
 
                     Toggle(
-                        "Keep the model loaded",
+                        "Keep the model loaded between recordings",
                         isOn: Binding(
                             get: { localModel.keepLoaded },
                             set: { model.setKeepModelLoaded($0) }
                         )
                     )
                     .disabled(!localModel.isDownloaded(localModel.selectedModel))
-                    Text("Recommended with 48 GB RAM. It unloads automatically under critical memory pressure.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(
+                        localModel.keepLoaded
+                            ? "Uses about 4.5 GB while TypeWhisper is open."
+                            : "Loads when recording starts, then unloads after 10 idle minutes. A cold short dictation may use deterministic cleanup."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
 
                 if let errorMessage = model.errorMessage {
@@ -262,13 +266,15 @@ struct AdaptiveDictionarySettingsView: View {
         case .notDownloaded:
             "Not downloaded · \(localModel.selectedModel.sizeDescription)"
         case .downloaded:
-            "Downloaded · not loaded"
+            "Ready for the next recording · not loaded"
         case .downloading(let progress):
             progress >= 0.01 ? "Downloading · \(Int(progress * 100))%" : "Downloading model"
         case .loading:
             "Loading into memory"
         case .ready:
-            "Ready · \(localModel.selectedModel.ramDescription) recommended"
+            localModel.keepLoaded
+                ? "Loaded · \(localModel.selectedModel.ramDescription) recommended"
+                : "Loaded · unloads after 10 idle minutes"
         case .error(let message):
             message
         }

@@ -95,6 +95,23 @@ final class SemanticRewriteTests: XCTestCase {
         )
     }
 
+    func testValidatorRejectsNewNumericLiteralForNumberWord() {
+        let request = SemanticRewriteRequest(
+            originalText: "On one hand, I think this role gives me more influence.",
+            deterministicText: "On one hand, I think this role gives me more influence.",
+            profile: .clear,
+            context: DictationContext(),
+            reasons: [.ambiguousFiller]
+        )
+
+        XCTAssertNil(
+            SemanticRewriteValidator.validatedCandidate(
+                "On 1 hand, I think this role gives me more influence.",
+                for: request
+            )
+        )
+    }
+
     @MainActor
     func testPipelineUsesModelOnlyForSemanticCase() async {
         let provider = StubProvider(output: "Can you inspect this component? Focus on state management.")

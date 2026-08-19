@@ -30,6 +30,23 @@ final class DeterministicCleanupTests: XCTestCase {
         XCTAssertEqual(plan.deterministicText, "She said “um, I I disagree,” and left.")
     }
 
+    func testRepairsNumericOnOneHandIdiomOutsideQuotes() {
+        XCTAssertEqual(
+            DeterministicCleanup.plan(
+                text: "Like on 1 hand, I know this role gives me more influence.",
+                profile: .clear
+            ).deterministicText,
+            "Like on one hand, I know this role gives me more influence."
+        )
+        XCTAssertEqual(
+            DeterministicCleanup.plan(
+                text: "She said \"on 1 hand\" and stopped.",
+                profile: .clear
+            ).deterministicText,
+            "She said \"on 1 hand\" and stopped."
+        )
+    }
+
     func testCasualProfileUsesLowercaseAndNoFinalPeriod() {
         let plan = DeterministicCleanup.plan(
             text: "I can send that now.",

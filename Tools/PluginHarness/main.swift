@@ -14,13 +14,21 @@ private final class HarnessEventBus: EventBusProtocol, @unchecked Sendable {
     func unsubscribe(id: UUID) {
         _ = lock.withLock { handlers.removeValue(forKey: id) }
     }
+
+    func emit(_ event: TypeWhisperEvent) async {
+        let currentHandlers = lock.withLock { Array(handlers.values) }
+        for handler in currentHandlers {
+            await handler(event)
+        }
+    }
 }
 
 private final class HarnessHost: HostServices, @unchecked Sendable {
     private let pluginID = "com.raysun.typewhisper.adaptive-dictionary"
     private let defaults = UserDefaults(suiteName: "com.typewhisper.mac")!
 
-    let eventBus: EventBusProtocol = HarnessEventBus()
+    private let harnessEventBus = HarnessEventBus()
+    var eventBus: EventBusProtocol { harnessEventBus }
     let activeAppBundleId: String? = nil
     let activeAppName: String? = nil
     let availableRuleNames: [String] = []
@@ -39,6 +47,10 @@ private final class HarnessHost: HostServices, @unchecked Sendable {
     func notifyCapabilitiesChanged() {}
     func setStreamingDisplayActive(_ active: Bool) {}
 
+    func emit(_ event: TypeWhisperEvent) async {
+        await harnessEventBus.emit(event)
+    }
+
     private func scoped(_ key: String) -> String { "plugin.\(pluginID).\(key)" }
 }
 
@@ -48,6 +60,11 @@ private struct HarnessResult: Encodable {
     let bundleIdentifier: String
     let mode: String
     let fallbackReason: String?
+    let modelStateBeforeRecording: String
+    let recordingTriggeredLoadSeconds: Double
+    let modelStateDuringRecordingAfterIdleWindow: String?
+    let modelStateAfterIdle: String?
+    let idleUnloadSeconds: Double?
     let elapsedSeconds: Double
 }
 
@@ -55,13 +72,18 @@ private struct HarnessResult: Encodable {
 struct PluginHarness {
     static func main() async throws {
         let arguments = CommandLine.arguments
-        guard arguments.count >= 3, arguments[1] == "process" else {
+        let supportedCommands = ["process", "process-immediately", "verify-idle"]
+        guard arguments.count >= 3, supportedCommands.contains(arguments[1]) else {
             FileHandle.standardError.write(
-                Data("Usage: AdaptiveDictationPluginHarness process <text> [bundle-id]\n".utf8)
+                Data(
+                    "Usage: AdaptiveDictationPluginHarness <process|process-immediately|verify-idle> <text> [bundle-id]\n"
+                        .utf8
+                )
             )
             Foundation.exit(64)
         }
 
+        let command = arguments[1]
         let input = arguments[2]
         let bundleIdentifier =
             arguments.count >= 4
@@ -80,8 +102,44 @@ struct PluginHarness {
         }
 
         let host = HarnessHost()
+        let previousIdleSeconds = host.userDefault(forKey: "semanticModelIdleUnloadSeconds")
+        if command == "verify-idle" {
+            host.setUserDefault(1, forKey: "semanticModelIdleUnloadSeconds")
+        }
+        defer {
+            if command == "verify-idle" {
+                host.setUserDefault(previousIdleSeconds, forKey: "semanticModelIdleUnloadSeconds")
+            }
+        }
         plugin.activate(host: host)
-        try await waitForModel(host: host)
+        try await Task.sleep(for: .milliseconds(100))
+        let stateBeforeRecording =
+            host.userDefault(forKey: "semanticModelRuntimeState") as? String ?? "unknown"
+        let loadStart = Date()
+        await host.emit(
+            .recordingStarted(
+                RecordingStartedPayload(
+                    appName: "Plugin Harness",
+                    bundleIdentifier: bundleIdentifier
+                )
+            )
+        )
+        var recordingTriggeredLoadSeconds: Double?
+        if command != "process-immediately" {
+            try await waitForModel(host: host)
+            recordingTriggeredLoadSeconds = Date().timeIntervalSince(loadStart)
+        }
+
+        var modelStateDuringRecordingAfterIdleWindow: String?
+        if command == "verify-idle" {
+            try await Task.sleep(for: .milliseconds(1_250))
+            modelStateDuringRecordingAfterIdleWindow =
+                host.userDefault(forKey: "semanticModelRuntimeState") as? String
+            guard modelStateDuringRecordingAfterIdleWindow == "ready" else {
+                throw HarnessError.modelFailed("model unloaded while recording was still active")
+            }
+        }
+        await host.emit(.recordingStopped(RecordingStoppedPayload(durationSeconds: 1)))
 
         let start = Date()
         let output = try await plugin.process(
@@ -91,13 +149,34 @@ struct PluginHarness {
                 bundleIdentifier: bundleIdentifier
             )
         )
+        let processElapsed = Date().timeIntervalSince(start)
+        try await waitForModel(host: host)
+        if recordingTriggeredLoadSeconds == nil {
+            recordingTriggeredLoadSeconds = Date().timeIntervalSince(loadStart)
+        }
+
+        var modelStateAfterIdle: String?
+        var idleUnloadSeconds: Double?
+        if command == "verify-idle" {
+            let idleStart = Date()
+            try await waitForState("downloaded", host: host, timeout: 10)
+            idleUnloadSeconds = Date().timeIntervalSince(idleStart)
+            modelStateAfterIdle =
+                host.userDefault(forKey: "semanticModelRuntimeState") as? String
+            host.setUserDefault(previousIdleSeconds, forKey: "semanticModelIdleUnloadSeconds")
+        }
         let result = HarnessResult(
             input: input,
             output: output,
             bundleIdentifier: bundleIdentifier,
             mode: host.userDefault(forKey: "lastCleanupMode") as? String ?? "unknown",
             fallbackReason: host.userDefault(forKey: "lastCleanupFallbackReason") as? String,
-            elapsedSeconds: Date().timeIntervalSince(start)
+            modelStateBeforeRecording: stateBeforeRecording,
+            recordingTriggeredLoadSeconds: recordingTriggeredLoadSeconds ?? 0,
+            modelStateDuringRecordingAfterIdleWindow: modelStateDuringRecordingAfterIdleWindow,
+            modelStateAfterIdle: modelStateAfterIdle,
+            idleUnloadSeconds: idleUnloadSeconds,
+            elapsedSeconds: processElapsed
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -120,6 +199,23 @@ struct PluginHarness {
             try await Task.sleep(for: .milliseconds(250))
         }
         throw HarnessError.modelFailed("timed out while loading")
+    }
+
+    private static func waitForState(
+        _ expectedState: String,
+        host: HarnessHost,
+        timeout: TimeInterval
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let state = host.userDefault(forKey: "semanticModelRuntimeState") as? String
+            if state == expectedState { return }
+            if state?.hasPrefix("error:") == true {
+                throw HarnessError.modelFailed(state ?? "unknown error")
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        throw HarnessError.modelFailed("timed out waiting for \(expectedState)")
     }
 }
 

@@ -1,1 +1,0 @@
-- [Adaptive Dictation rollout](adaptive-dictation-rollout.md): Installed local post-processor with verified E4B runtime.

@@ -12,7 +12,7 @@ packages:
     revision: 09deb8c4e9056fcd76b60718bb50325d1730572b
   SwiftTransformers:
     url: https://github.com/huggingface/swift-transformers.git
-    from: 1.1.6
+    revision: 2fa33e1f5e7131a7fc64c28e6d161dcec0d24820
 targets:
   AdaptiveDictionaryPlugin:
     type: bundle
@@ -36,7 +36,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.raysun.typewhisper.adaptive-dictionary
         PRODUCT_NAME: AdaptiveDictionaryPlugin
         PRODUCT_MODULE_NAME: AdaptiveDictionaryPlugin
-        MARKETING_VERSION: 1.0.0
+        MARKETING_VERSION: 1.1.1
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: true
         INFOPLIST_KEY_CFBundleDisplayName: Adaptive Dictation
