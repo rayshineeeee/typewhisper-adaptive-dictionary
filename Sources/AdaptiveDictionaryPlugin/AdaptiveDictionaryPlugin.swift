@@ -12,9 +12,9 @@ private let logger = Logger(
 @objc(AdaptiveDictionaryPlugin)
 final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked Sendable {
     static let pluginId = "com.raysun.typewhisper.adaptive-dictionary"
-    static let pluginName = "Adaptive Dictionary"
+    static let pluginName = "Adaptive Dictation"
 
-    let processorName = "Adaptive Dictionary"
+    let processorName = "Adaptive Dictation"
     let priority = 220
 
     private struct RuntimeState: Sendable {
@@ -22,6 +22,9 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
         let store: CorrectionStore?
         let captureService: CorrectionCaptureService
         let model: AdaptiveDictionarySettingsModel
+        let localModel: LocalGemmaRuntime
+        let tracker: ProcessingSessionTracker
+        let toastPresenter: LearningToastPresenter
         let subscriptionID: UUID
     }
 
@@ -48,12 +51,35 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
             logger.error("Failed to initialize store: \(error.localizedDescription, privacy: .public)")
         }
 
-        let captureService = CorrectionCaptureService(store: store) { [weak self] in
-            self?.stateSnapshot()?.model.refresh()
-        }
+        let localModel = LocalGemmaRuntime(host: host)
+        let tracker = ProcessingSessionTracker()
+        let toastPresenter = LearningToastPresenter()
+        let captureService = CorrectionCaptureService(
+            store: store,
+            onRulesChanged: { [weak self] in
+                self?.stateSnapshot()?.model.refresh()
+            },
+            onLearned: { [weak self] receipt in
+                guard let state = self?.stateSnapshot(), let store = state.store else { return }
+                state.toastPresenter.show(receipt: receipt) { [weak self] in
+                    Task {
+                        do {
+                            try await store.undo(receipt)
+                            await MainActor.run {
+                                self?.stateSnapshot()?.model.refresh()
+                            }
+                        } catch {
+                            logger.error(
+                                "Failed to undo learned correction: \(error.localizedDescription, privacy: .public)")
+                        }
+                    }
+                }
+            }
+        )
         let model = AdaptiveDictionarySettingsModel(
             host: host,
             store: store,
+            localModel: localModel,
             initialError: initialError,
             onLearningChanged: { enabled in
                 captureService.setEnabled(enabled)
@@ -69,6 +95,9 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
                 store: store,
                 captureService: captureService,
                 model: model,
+                localModel: localModel,
+                tracker: tracker,
+                toastPresenter: toastPresenter,
                 subscriptionID: subscriptionID
             )
         }
@@ -89,6 +118,8 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
         oldState.host.eventBus.unsubscribe(id: oldState.subscriptionID)
         Task { @MainActor in
             oldState.captureService.stop()
+            oldState.localModel.unload(clearPersistence: false)
+            oldState.toastPresenter.dismiss()
         }
         logger.info("Adaptive Dictionary deactivated")
     }
@@ -101,16 +132,48 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
 
     @MainActor
     func process(text: String, context: PostProcessingContext) async throws -> String {
-        guard let state = stateSnapshot(), let store = state.store else { return text }
+        guard let state = stateSnapshot() else { return text }
+        let dictationContext = AccessibilityContextReader.context(from: context)
+        let profile = DictationProfile.resolve(bundleIdentifier: context.bundleIdentifier)
+        var correctedText = text
         let minimumConfirmations = state.host.userDefault(forKey: "minimumConfirmations") as? Int ?? 2
-        let application = try await store.apply(
-            to: text,
-            minimumConfirmations: minimumConfirmations
-        )
-        if !application.appliedRuleIDs.isEmpty {
-            state.model.refresh()
+        var examples: [LearnedStyleExample] = []
+        if let store = state.store {
+            let application = try await store.apply(
+                to: text,
+                minimumConfirmations: minimumConfirmations
+            )
+            correctedText = application.text
+            examples = await store.recentStyleExamples(profile: profile)
+            if !application.appliedRuleIDs.isEmpty {
+                state.model.refresh()
+            }
         }
-        return application.text
+        let provider: (any SemanticRewriteProvider)? =
+            state.localModel.semanticCleanupEnabled
+                && state.localModel.isReady
+            ? state.localModel
+            : nil
+        let result = await DictationPipeline.process(
+            text: correctedText,
+            profile: profile,
+            context: dictationContext,
+            learnedExamples: examples,
+            semanticProvider: provider
+        )
+        state.tracker.recordProcessed(
+            inputText: text,
+            outputText: result.text,
+            profile: profile,
+            bundleIdentifier: context.bundleIdentifier
+        )
+        state.model.recordPipelineResult(result)
+        state.host.setUserDefault(
+            result.usedSemanticModel ? "semantic" : "deterministic",
+            forKey: "lastCleanupMode"
+        )
+        state.host.setUserDefault(result.fallbackReason, forKey: "lastCleanupFallbackReason")
+        return result.text
     }
 
     private func handle(_ event: TypeWhisperEvent) async {
@@ -118,12 +181,55 @@ final class AdaptiveDictionaryPlugin: NSObject, PostProcessorPlugin, @unchecked 
 
         switch event {
         case .textInserted(let payload):
+            let learningEnabled = state.host.userDefault(forKey: "learningEnabled") as? Bool ?? true
+            guard learningEnabled else { return }
+            let snapshot = await MainActor.run {
+                state.tracker.consumeInsertion(
+                    text: payload.text,
+                    bundleIdentifier: payload.bundleIdentifier
+                )
+            }
+            let profile =
+                snapshot?.profile
+                ?? DictationProfile.resolve(bundleIdentifier: payload.bundleIdentifier)
+            let rawTranscript = snapshot?.inputText ?? payload.text
+            let recordID: UUID?
+            do {
+                recordID = try await state.store?.recordInsertion(
+                    rawTranscript: rawTranscript,
+                    pluginOutput: payload.text,
+                    profile: profile,
+                    now: payload.timestamp
+                )
+            } catch {
+                recordID = nil
+                logger.error(
+                    "Failed to record local dictation history: \(error.localizedDescription, privacy: .public)")
+            }
             await MainActor.run {
+                if let recordID, let snapshot {
+                    state.tracker.associate(recordID: recordID, with: snapshot)
+                }
                 state.captureService.beginInsertion(
                     text: payload.text,
+                    recordID: recordID,
                     bundleIdentifier: payload.bundleIdentifier,
                     timestamp: payload.timestamp
                 )
+                state.model.refresh()
+            }
+
+        case .transcriptionCompleted(let payload):
+            let recordID = await MainActor.run {
+                state.tracker.consumeRecordID(
+                    finalText: payload.finalText,
+                    bundleIdentifier: payload.bundleIdentifier
+                )
+            }
+            do {
+                try await state.store?.updateRawTranscript(payload.rawText, recordID: recordID)
+            } catch {
+                logger.error("Failed to update raw transcript history: \(error.localizedDescription, privacy: .public)")
             }
 
         default:

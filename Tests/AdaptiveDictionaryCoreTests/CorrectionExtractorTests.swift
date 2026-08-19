@@ -74,4 +74,14 @@ final class CorrectionExtractorTests: XCTestCase {
             []
         )
     }
+
+    func testRejectsAutomaticNumericCorrection() {
+        XCTAssertEqual(
+            CorrectionExtractor.extract(
+                original: "Meet at 3 on Tuesday",
+                corrected: "Meet at 4 on Tuesday"
+            ),
+            []
+        )
+    }
 }

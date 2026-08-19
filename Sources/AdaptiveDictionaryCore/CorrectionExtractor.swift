@@ -160,6 +160,13 @@ public enum CorrectionExtractor {
             return false
         }
 
+        let containsNumericEdit =
+            source.rangeOfCharacter(from: .decimalDigits) != nil
+            || replacement.rangeOfCharacter(from: .decimalDigits) != nil
+        if containsNumericEdit && source.canonicalComparison != replacement.canonicalComparison {
+            return false
+        }
+
         let sourceWords = source.split(whereSeparator: \.isWhitespace)
         if sourceWords.count == 1,
             riskySingleWords.contains(source.canonicalComparison),

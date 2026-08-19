@@ -83,4 +83,44 @@ final class CorrectionStoreTests: XCTestCase {
         let remainingRules = await store.snapshot()
         XCTAssertEqual(remainingRules, [])
     }
+
+    func testStoresLocalHistoryAndReturnsProfileExamples() async throws {
+        let fileURL = temporaryDirectory.appendingPathComponent("corrections.json")
+        let store = try CorrectionStore(fileURL: fileURL)
+        let recordID = try await store.recordInsertion(
+            rawTranscript: "open type whisper",
+            pluginOutput: "Open type whisper.",
+            profile: .clear
+        )
+        try await store.recordFinalText("Open TypeWhisper.", recordID: recordID)
+
+        let reloaded = try CorrectionStore(fileURL: fileURL)
+        let history = await reloaded.historySnapshot()
+        let examples = await reloaded.recentStyleExamples(profile: .clear)
+
+        XCTAssertEqual(history.count, 1)
+        XCTAssertEqual(history[0].rawTranscript, "open type whisper")
+        XCTAssertEqual(history[0].finalText, "Open TypeWhisper.")
+        XCTAssertEqual(
+            examples,
+            [LearnedStyleExample(before: "Open type whisper.", after: "Open TypeWhisper.", profile: .clear)]
+        )
+    }
+
+    func testLearningReceiptCanBeUndone() async throws {
+        let fileURL = temporaryDirectory.appendingPathComponent("corrections.json")
+        let store = try CorrectionStore(fileURL: fileURL)
+        let receipt = try await store.observeLearning(
+            original: "open linear",
+            corrected: "open Linear",
+            bundleIdentifier: "com.apple.Notes"
+        )
+        let learnedSnapshot = await store.snapshot()
+        XCTAssertEqual(learnedSnapshot.count, 1)
+
+        try await store.undo(receipt)
+
+        let undoneSnapshot = await store.snapshot()
+        XCTAssertEqual(undoneSnapshot, [])
+    }
 }

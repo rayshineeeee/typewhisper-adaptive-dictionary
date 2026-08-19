@@ -9,21 +9,26 @@ final class AdaptiveDictionarySettingsModel: ObservableObject, @unchecked Sendab
     private let host: HostServices
     private let store: CorrectionStore?
     private let onLearningChanged: @MainActor @Sendable (Bool) -> CaptureStatus
+    let localModel: LocalGemmaRuntime
 
     @Published private(set) var rules: [LearnedCorrection] = []
     @Published private(set) var learningEnabled: Bool
     @Published private(set) var minimumConfirmations: Int
     @Published private(set) var captureStatus: CaptureStatus = .disabled
     @Published private(set) var errorMessage: String?
+    @Published private(set) var historyCount = 0
+    @Published private(set) var lastPipelineStatus: String?
 
     init(
         host: HostServices,
         store: CorrectionStore?,
+        localModel: LocalGemmaRuntime,
         initialError: String?,
         onLearningChanged: @escaping @MainActor @Sendable (Bool) -> CaptureStatus
     ) {
         self.host = host
         self.store = store
+        self.localModel = localModel
         self.onLearningChanged = onLearningChanged
 
         if let stored = host.userDefault(forKey: Self.learningEnabledKey) as? Bool {
@@ -54,6 +59,7 @@ final class AdaptiveDictionarySettingsModel: ObservableObject, @unchecked Sendab
     @MainActor
     func start() {
         captureStatus = onLearningChanged(learningEnabled)
+        localModel.start()
         refresh()
     }
 
@@ -76,9 +82,35 @@ final class AdaptiveDictionarySettingsModel: ObservableObject, @unchecked Sendab
         guard let store else { return }
         Task { [weak self] in
             let snapshot = await store.snapshot()
+            let history = await store.historySnapshot()
             await MainActor.run {
                 self?.rules = snapshot
+                self?.historyCount = history.count
             }
+        }
+    }
+
+    @MainActor
+    func setSemanticCleanupEnabled(_ enabled: Bool) {
+        localModel.setSemanticCleanupEnabled(enabled)
+        objectWillChange.send()
+    }
+
+    @MainActor
+    func setKeepModelLoaded(_ enabled: Bool) {
+        localModel.setKeepLoaded(enabled)
+        objectWillChange.send()
+    }
+
+    @MainActor
+    func recordPipelineResult(_ result: DictationPipelineResult) {
+        if result.usedSemanticModel {
+            let duration = localModel.lastInferenceDuration.map { String(format: "%.2fs", $0) } ?? "local"
+            lastPipelineStatus = "Semantic cleanup · \(duration)"
+        } else if let fallbackReason = result.fallbackReason {
+            lastPipelineStatus = "Deterministic fallback · \(fallbackReason)"
+        } else {
+            lastPipelineStatus = "Deterministic cleanup"
         }
     }
 
@@ -133,6 +165,24 @@ final class AdaptiveDictionarySettingsModel: ObservableObject, @unchecked Sendab
                 try await store.deleteAll()
                 await MainActor.run {
                     self?.rules = []
+                    self?.errorMessage = nil
+                }
+            } catch {
+                await MainActor.run {
+                    self?.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func deleteHistory() {
+        guard let store else { return }
+        Task { [weak self] in
+            do {
+                try await store.deleteHistory()
+                await MainActor.run {
+                    self?.historyCount = 0
                     self?.errorMessage = nil
                 }
             } catch {

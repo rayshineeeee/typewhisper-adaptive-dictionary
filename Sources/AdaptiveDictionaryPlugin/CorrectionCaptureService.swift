@@ -18,6 +18,7 @@ final class CorrectionCaptureService: @unchecked Sendable {
 
     private struct CaptureSession {
         let originalText: String
+        let recordID: UUID?
         let bundleIdentifier: String?
         let baselineText: String
         let insertedRange: NSRange
@@ -28,6 +29,7 @@ final class CorrectionCaptureService: @unchecked Sendable {
 
     private let store: CorrectionStore?
     private let onRulesChanged: @MainActor @Sendable () -> Void
+    private let onLearned: @MainActor @Sendable (LearningReceipt) -> Void
     private var isEnabled = false
     private var session: CaptureSession?
     private var pollTask: Task<Void, Never>?
@@ -35,9 +37,14 @@ final class CorrectionCaptureService: @unchecked Sendable {
     private var localKeyMonitor: Any?
     private var appActivationObserver: NSObjectProtocol?
 
-    init(store: CorrectionStore?, onRulesChanged: @escaping @MainActor @Sendable () -> Void) {
+    init(
+        store: CorrectionStore?,
+        onRulesChanged: @escaping @MainActor @Sendable () -> Void,
+        onLearned: @escaping @MainActor @Sendable (LearningReceipt) -> Void
+    ) {
         self.store = store
         self.onRulesChanged = onRulesChanged
+        self.onLearned = onLearned
     }
 
     @MainActor
@@ -58,7 +65,12 @@ final class CorrectionCaptureService: @unchecked Sendable {
     }
 
     @MainActor
-    func beginInsertion(text: String, bundleIdentifier: String?, timestamp: Date) {
+    func beginInsertion(
+        text: String,
+        recordID: UUID?,
+        bundleIdentifier: String?,
+        timestamp: Date
+    ) {
         guard isEnabled, !text.isEmpty else { return }
         commitCurrentSession()
 
@@ -75,6 +87,7 @@ final class CorrectionCaptureService: @unchecked Sendable {
 
         session = CaptureSession(
             originalText: text,
+            recordID: recordID,
             bundleIdentifier: bundleIdentifier,
             baselineText: snapshot.value,
             insertedRange: insertedRange,
@@ -149,14 +162,20 @@ final class CorrectionCaptureService: @unchecked Sendable {
 
         Task {
             do {
-                let learned = try await store.observe(
+                try await store.recordFinalText(
+                    correctedText,
+                    recordID: completedSession.recordID
+                )
+                let receipt = try await store.observeLearning(
                     original: completedSession.originalText,
                     corrected: correctedText,
                     bundleIdentifier: completedSession.bundleIdentifier
                 )
-                if !learned.isEmpty {
-                    await onRulesChanged()
-                    captureLogger.info("Learned \(learned.count, privacy: .public) local correction candidate(s)")
+                if !receipt.learnedRules.isEmpty {
+                    onRulesChanged()
+                    onLearned(receipt)
+                    captureLogger.info(
+                        "Learned \(receipt.learnedRules.count, privacy: .public) local correction candidate(s)")
                 }
             } catch {
                 captureLogger.error("Failed to persist correction: \(error.localizedDescription, privacy: .public)")

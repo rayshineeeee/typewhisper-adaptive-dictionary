@@ -7,6 +7,12 @@ options:
 packages:
   AdaptiveDictionaryCore:
     path: .
+  MLXSwiftLM:
+    url: https://github.com/ml-explore/mlx-swift-lm.git
+    revision: 09deb8c4e9056fcd76b60718bb50325d1730572b
+  SwiftTransformers:
+    url: https://github.com/huggingface/swift-transformers.git
+    from: 1.1.6
 targets:
   AdaptiveDictionaryPlugin:
     type: bundle
@@ -17,6 +23,12 @@ targets:
         buildPhase: resources
     dependencies:
       - package: AdaptiveDictionaryCore
+      - package: MLXSwiftLM
+        product: MLXLLM
+      - package: MLXSwiftLM
+        product: MLXVLM
+      - package: SwiftTransformers
+        product: Transformers
       - framework: /Applications/TypeWhisper.app/Contents/Frameworks/TypeWhisperPluginSDK.framework
         embed: false
     settings:
@@ -24,10 +36,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.raysun.typewhisper.adaptive-dictionary
         PRODUCT_NAME: AdaptiveDictionaryPlugin
         PRODUCT_MODULE_NAME: AdaptiveDictionaryPlugin
-        MARKETING_VERSION: 0.1.0
+        MARKETING_VERSION: 1.0.0
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: true
-        INFOPLIST_KEY_CFBundleDisplayName: Adaptive Dictionary
+        INFOPLIST_KEY_CFBundleDisplayName: Adaptive Dictation
         INFOPLIST_KEY_NSPrincipalClass: AdaptiveDictionaryPlugin
         SKIP_INSTALL: true
         SWIFT_VERSION: 6.0

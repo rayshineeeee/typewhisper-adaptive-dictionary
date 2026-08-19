@@ -15,6 +15,7 @@ if ! xcodebuild \
     -derivedDataPath .build/xcode \
     CODE_SIGN_IDENTITY=- \
     CODE_SIGNING_REQUIRED=NO \
+    -skipPackagePluginValidation \
     ARCHS=arm64 \
     build > "$build_log" 2>&1; then
     tail -n 120 "$build_log" >&2
