@@ -1,0 +1,16 @@
+{
+  "id": "com.raysun.typewhisper.adaptive-dictionary",
+  "name": "Adaptive Dictionary",
+  "version": "0.1.0",
+  "minHostVersion": "1.5.0",
+  "sdkCompatibilityVersion": "v1",
+  "minOSVersion": "14.0",
+  "supportedArchitectures": ["arm64"],
+  "author": "Ray Sun",
+  "description": "Learns your committed dictation corrections locally and applies confirmed replacements automatically.",
+  "principalClass": "AdaptiveDictionaryPlugin",
+  "requiresAPIKey": false,
+  "hosting": "local",
+  "iconSystemName": "character.book.closed",
+  "category": "post-processor"
+}

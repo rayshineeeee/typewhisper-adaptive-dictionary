@@ -1,0 +1,45 @@
+name: AdaptiveDictionary
+options:
+  bundleIdPrefix: com.raysun
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+packages:
+  AdaptiveDictionaryCore:
+    path: .
+targets:
+  AdaptiveDictionaryPlugin:
+    type: bundle
+    platform: macOS
+    sources:
+      - path: Sources/AdaptiveDictionaryPlugin
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: AdaptiveDictionaryCore
+      - framework: /Applications/TypeWhisper.app/Contents/Frameworks/TypeWhisperPluginSDK.framework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.raysun.typewhisper.adaptive-dictionary
+        PRODUCT_NAME: AdaptiveDictionaryPlugin
+        PRODUCT_MODULE_NAME: AdaptiveDictionaryPlugin
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: true
+        INFOPLIST_KEY_CFBundleDisplayName: Adaptive Dictionary
+        INFOPLIST_KEY_NSPrincipalClass: AdaptiveDictionaryPlugin
+        SKIP_INSTALL: true
+        SWIFT_VERSION: 6.0
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/.build/sdk"
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: true
+        ENABLE_USER_SCRIPT_SANDBOXING: true
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+schemes:
+  AdaptiveDictionaryPlugin:
+    build:
+      targets:
+        AdaptiveDictionaryPlugin: all

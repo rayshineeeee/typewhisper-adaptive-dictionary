@@ -1,0 +1,7 @@
+.build/
+AdaptiveDictionary.xcodeproj/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.backup-*
+.DS_Store
