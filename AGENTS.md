@@ -36,7 +36,8 @@ Adaptive Dictation is Ray's external TypeWhisper post-processor. It provides con
 - E4B 4-bit is the default; E2B 4-bit is the smaller alternative.
 - Keep MLX Swift LM at `09deb8c4` or newer for current Gemma 4 shared-KV checkpoints.
 - Keep downloaded weights outside the bundle under TypeWhisper's plugin data directory.
-- Keep the selected model resident when enabled, but unload it under critical memory pressure.
+- Start loading the selected model on `recordingStarted` and unload it after 10 idle minutes.
+- Keep-loaded is optional. Critical memory pressure always unloads the model.
 
 ## Engineering conventions
 

@@ -26,7 +26,7 @@ Notes and Notion intentionally use Clear. There is one standard cleanup strength
 1. Apply confirmed local vocabulary corrections.
 2. Run deterministic cleanup and profile styling.
 3. Detect whether the text actually needs semantic repair.
-4. If needed and ready, ask the resident local model for replacement text.
+4. If needed, use the model that started loading when recording began.
 5. Reject output that answers the speaker, loses protected content, changes numbers/URLs/code identifiers, alters quotes, or rewrites too much.
 6. On rejection, error, or timeout, insert the deterministic result. No delayed replacement occurs.
 
@@ -37,9 +37,10 @@ Short model-gated dictation has a two-second deadline. Long passages have a ten-
 - Default: Gemma 4 E4B 4-bit (`mlx-community/gemma-4-e4b-it-4bit`, about 5.2 GB).
 - Smaller option: Gemma 4 E2B 4-bit (about 3.6 GB).
 - Runtime: MLX on Apple Silicon, adapted from TypeWhisper's GPL-licensed Gemma 4 plugin.
-- Lifecycle: optionally resident all day; automatically unloaded under critical memory pressure.
+- Lifecycle: starts loading when recording begins and unloads after 10 idle minutes. An optional setting keeps it resident.
+- Cold start: about four seconds on Ray's M5 Pro. Warm rewrites are typically under one second.
 
-The model downloads only after an explicit setup request. Downloading uses Hugging Face; inference and prompt context stay on the Mac. See [third-party notices](THIRD_PARTY_NOTICES.md).
+The model downloads only after an explicit setup request. Downloading uses Hugging Face; inference and prompt context stay on the Mac. Short dictations fall back to deterministic cleanup if a cold model misses the two-second deadline. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## Learning and local data
 
@@ -81,6 +82,8 @@ scripts/run-plugin-harness.sh process \
   "Can you look at this React component I think focus on the state management" \
   "com.todesktop.230313mzl4w4u92"
 ```
+
+`process-immediately` tests the two-second cold-load boundary. `verify-idle` temporarily shortens the idle timer and verifies that the model unloads.
 
 The build reads the installed TypeWhisper version and compiles against the matching SDK tag. MLX Swift LM is pinned to upstream commit `09deb8c4`, which contains the regression-tested shared-KV loader fix required by the current July 2026 E4B weights. The installed plugin appears as **Adaptive Dictation** while retaining its existing stable plugin identifier and correction database.
 

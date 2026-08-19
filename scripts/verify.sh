@@ -25,7 +25,7 @@ info_principal_class="$(plutil -extract NSPrincipalClass raw "$info_plist")"
 [[ "$principal_class" == "AdaptiveDictionaryPlugin" ]]
 [[ "$info_principal_class" == "AdaptiveDictionaryPlugin" ]]
 [[ "$(plutil -extract name raw "$manifest")" == "Adaptive Dictation" ]]
-[[ "$(plutil -extract version raw "$manifest")" == "1.0.0" ]]
+[[ "$(plutil -extract version raw "$manifest")" == "1.1.0" ]]
 file "$executable" | grep -q "Mach-O 64-bit bundle arm64"
 file "$harness" | grep -q "Mach-O 64-bit executable arm64"
 otool -L "$executable" | grep -q "@rpath/TypeWhisperPluginSDK.framework"
@@ -48,6 +48,11 @@ fi
 
 rg -q "import Hub" Sources/AdaptiveDictionaryPlugin/LocalGemmaRuntime.swift
 rg -q "semanticModelSetupRequested" Sources/AdaptiveDictionaryPlugin/LocalGemmaRuntime.swift
+rg -q "case \.recordingStarted" Sources/AdaptiveDictionaryPlugin/AdaptiveDictionaryPlugin.swift
+rg -q "case \.recordingStopped" Sources/AdaptiveDictionaryPlugin/AdaptiveDictionaryPlugin.swift
+rg -q "defaultIdleUnloadSeconds = 600" Sources/AdaptiveDictionaryPlugin/LocalGemmaRuntime.swift
+rg -q "recordingInProgress" Sources/AdaptiveDictionaryPlugin/LocalGemmaRuntime.swift
+rg -q "RecordingStartedPayload" Tools/PluginHarness/main.swift
 rg -q "revision: 09deb8c4e9056fcd76b60718bb50325d1730572b" project.yml
 
 if find "$bundle" -name '*.safetensors' -print -quit | grep -q .; then
